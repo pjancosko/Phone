@@ -3,38 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MindAR + A-Frame: Phone GLB Pop + Animate</title>
+    <title>MindAR + Phone Pop</title>
 
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
-    <!-- MindAR (Image Tracking) for A-Frame -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
+    <style>
+      body { margin: 0; overflow: hidden; background: #000; }
+    </style>
+
     <script>
-      // Shows the model when the target is found, hides it when lost,
-      // and plays the first GLB animation clip on loop.
-      AFRAME.registerComponent("pop-and-animate", {
+      AFRAME.registerComponent("pop-phone", {
         init() {
-          const el = this.el;                 // the model entity
-          const target = el.parentEl;         // mindar-image-target
+          const model = this.el.querySelector("#phoneModel");
 
-          // Start hidden until target is found
-          el.setAttribute("visible", false);
+          // start hidden until marker found
+          model.setAttribute("visible", false);
 
-          // Make it "pop" in
-          const popIn = () => {
-            el.setAttribute("visible", true);
-            el.setAttribute("scale", "0.001 0.001 0.001");
-            el.setAttribute("animation__pop", {
+          const show = () => {
+            model.setAttribute("visible", true);
+
+            // pop animation (scale up)
+            model.setAttribute("scale", "0.001 0.001 0.001");
+            model.setAttribute("animation__pop", {
               property: "scale",
               to: "1 1 1",
-              dur: 400,
+              dur: 450,
               easing: "easeOutBack"
             });
 
-            // Restart glTF animation (if any)
-            el.setAttribute("animation-mixer", {
+            // play glb animation (first clip) on loop
+            model.setAttribute("animation-mixer", {
               clip: "*",
               loop: "repeat",
               timeScale: 1
@@ -42,26 +41,20 @@
           };
 
           const hide = () => {
-            el.setAttribute("visible", false);
-            // optional: stop the mixer cleanly
-            el.removeAttribute("animation-mixer");
+            model.setAttribute("visible", false);
+            model.removeAttribute("animation-mixer");
           };
 
-          target.addEventListener("targetFound", popIn);
-          target.addEventListener("targetLost", hide);
+          this.el.addEventListener("targetFound", show);
+          this.el.addEventListener("targetLost", hide);
         }
       });
     </script>
-
-    <style>
-      body { margin: 0; overflow: hidden; background: #000; }
-    </style>
   </head>
 
   <body>
     <a-scene
       mindar-image="imageTargetSrc: target.mind; autoStart: true; uiScanning: true; uiLoading: true;"
-      color-space="sRGB"
       renderer="colorManagement: true; physicallyCorrectLights: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true"
@@ -70,22 +63,22 @@
         <a-asset-item id="phoneGLB" src="Phonemodel1.glb"></a-asset-item>
       </a-assets>
 
-      <!-- If your target.mind has ONLY ONE target, index is 0 -->
-      <a-entity mindar-image-target="targetIndex: 0">
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <!-- Target 0 -->
+      <a-entity mindar-image-target="targetIndex: 0" pop-phone>
         <a-gltf-model
+          id="phoneModel"
           src="#phoneGLB"
-          pop-and-animate
           position="0 0 0"
           rotation="0 0 0"
           scale="1 1 1"
         ></a-gltf-model>
       </a-entity>
 
-      <!-- Simple light (optional, helps metals) -->
-      <a-entity light="type: ambient; intensity: 0.8"></a-entity>
-      <a-entity light="type: directional; intensity: 0.9" position="1 2 1"></a-entity>
-
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+      <!-- Optional light -->
+      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+      <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
     </a-scene>
   </body>
 </html>
