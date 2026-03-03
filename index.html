@@ -5,54 +5,102 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>MindAR + Phone Pop</title>
 
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
       body { margin: 0; overflow: hidden; background: #000; }
+
+      /* Simple scanning frame overlay (always visible until target found) */
+      #scanFrame {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 68vw;
+        max-width: 360px;
+        aspect-ratio: 1 / 1;
+        border: 3px solid rgba(255,255,255,0.85);
+        border-radius: 18px;
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.25);
+        pointer-events: none;
+        z-index: 999999;
+      }
+
+      #scanText {
+        position: fixed;
+        left: 50%;
+        top: calc(50% + 220px);
+        transform: translateX(-50%);
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: rgba(0,0,0,0.55);
+        color: #fff;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        font-size: 14px;
+        z-index: 999999;
+        pointer-events: none;
+      }
     </style>
 
     <script>
-      AFRAME.registerComponent("pop-phone", {
-        init() {
-          const model = this.el.querySelector("#phoneModel");
+  AFRAME.registerComponent("pop-phone", {
+    init() {
+      const target = this.el;
+      const rig = target.querySelector("#phoneRig");
+      const modelEl = target.querySelector("#phoneModel");
 
-          // start hidden until marker found
-          model.setAttribute("visible", false);
-
-          const show = () => {
-            model.setAttribute("visible", true);
-
-            // pop animation (scale up)
-            model.setAttribute("scale", "0.001 0.001 0.001");
-            model.setAttribute("animation__pop", {
-              property: "scale",
-              to: "1 1 1",
-              dur: 450,
-              easing: "easeOutBack"
-            });
-
-            // play glb animation (first clip) on loop
-            model.setAttribute("animation-mixer", {
-              clip: "*",
-              loop: "repeat",
-              timeScale: 1
-            });
-          };
-
-          const hide = () => {
-            model.setAttribute("visible", false);
-            model.removeAttribute("animation-mixer");
-          };
-
-          this.el.addEventListener("targetFound", show);
-          this.el.addEventListener("targetLost", hide);
-        }
+      let gltfAnimations = [];
+      modelEl.addEventListener("model-loaded", (e) => {
+        const gltf = e.detail.model;                 // THREE.Group
+        gltfAnimations = (e.detail.model?.animations) || [];
+        // NOTE: A-Frame doesn’t always expose clips here; better:
+        const obj = modelEl.getObject3D("mesh");
+        const clips = obj?.animations || [];
+        console.log("GLB clips:", clips.map(c => c.name));
       });
-    </script>
+
+      rig.setAttribute("visible", false);
+
+      const show = () => {
+        rig.setAttribute("visible", true);
+
+        // pop
+        rig.setAttribute("scale", "0.001 0.001 0.001");
+        rig.setAttribute("animation__pop", {
+          property: "scale",
+          to: "6 6 6",
+          dur: 450,
+          easing: "easeOutBack"
+        });
+
+        // play animation
+        // If clip "*" doesn’t work, replace with a real clip name from console
+        modelEl.setAttribute("animation-mixer", {
+          clip: "*",
+          loop: "repeat",
+          timeScale: 1
+        });
+      };
+
+      const hide = () => {
+        rig.setAttribute("visible", false);
+        modelEl.removeAttribute("animation-mixer");
+      };
+
+      target.addEventListener("targetFound", show);
+      target.addEventListener("targetLost", hide);
+    }
+  });
+</script>
   </head>
 
   <body>
+    <!-- Our guaranteed scanning UI -->
+    <div id="scanFrame"></div>
+    <div id="scanText">Point your camera at the marker</div>
+
     <a-scene
       mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: true; uiLoading: true;"
       renderer="colorManagement: true; physicallyCorrectLights: true"
@@ -65,18 +113,21 @@
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- Target 0 -->
       <a-entity mindar-image-target="targetIndex: 0" pop-phone>
-        <a-gltf-model
-          id="phoneModel"
-          src="#phoneGLB"
-          position="0 0 0"
-          rotation="0 0 0"
-          scale="10 10 10"
-        ></a-gltf-model>
-      </a-entity>
+<a-entity
+  id="phoneRig"
+  position="0 0 0"
+  rotation="-90 0 180"
+  scale="1 1 1"
+>
+  <a-gltf-model
+    id="phoneModel"
+    src="#phoneGLB"
+    position="0 0.08 0"
+    rotation="0 180 0"
+  ></a-gltf-model>
+</a-entity>
 
-      <!-- Optional light -->
       <a-entity light="type: ambient; intensity: 0.9"></a-entity>
       <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
     </a-scene>
