@@ -48,49 +48,59 @@
   AFRAME.registerComponent("pop-phone", {
     init() {
       const target = this.el;
-      const rig = target.querySelector("#phoneRig");
+      const rig   = target.querySelector("#phoneRig");
       const modelEl = target.querySelector("#phoneModel");
-
-      let gltfAnimations = [];
-      modelEl.addEventListener("model-loaded", (e) => {
-        const gltf = e.detail.model;                 // THREE.Group
-        gltfAnimations = (e.detail.model?.animations) || [];
-        // NOTE: A-Frame doesn’t always expose clips here; better:
-        const obj = modelEl.getObject3D("mesh");
-        const clips = obj?.animations || [];
-        console.log("GLB clips:", clips.map(c => c.name));
-      });
+      const ringAudio = document.querySelector("#ringAudio");
 
       rig.setAttribute("visible", false);
 
+      // ── Initialize the mixer ONCE when the GLB finishes loading ──────────
+      // Frozen at timeScale:0 so nothing plays until targetFound fires.
+      modelEl.addEventListener("model-loaded", () => {
+        const mesh = modelEl.getObject3D("mesh");
+        if (mesh?.animations?.length) {
+          console.log("GLB clips:", mesh.animations.map(c => c.name));
+        }
+        modelEl.setAttribute("animation-mixer", {
+          clip: "*",
+          loop: "repeat",
+          timeScale: 0      // paused – ready to go instantly on show()
+        });
+      });
+
+      // ── Show: pop scale + start animation ────────────────────────────────
       const show = () => {
         rig.setAttribute("visible", true);
 
-        // pop
+        // Remove then re-add so the pop always restarts from scratch
+        rig.removeAttribute("animation__pop");
         rig.setAttribute("scale", "0.001 0.001 0.001");
         rig.setAttribute("animation__pop", {
           property: "scale",
-          to: "6 6 6",
+          to: "3 3 3",
           dur: 450,
           easing: "easeOutBack"
         });
 
-        // play animation
-        // If clip "*" doesn’t work, replace with a real clip name from console
-        modelEl.setAttribute("animation-mixer", {
-          clip: "*",
-          loop: "repeat",
-          timeScale: 1
-        });
+        // Un-freeze the animation (mixer already exists from model-loaded)
+        modelEl.setAttribute("animation-mixer", "timeScale", 1);
+
+        // Play ring audio, looping
+        ringAudio.loop = true;
+        ringAudio.currentTime = 0;
+        ringAudio.play().catch(() => {});  // .catch silences autoplay policy warnings
       };
 
+      // ── Hide: freeze animation + stop audio ──────────────────────────────
       const hide = () => {
         rig.setAttribute("visible", false);
-        modelEl.removeAttribute("animation-mixer");
+        modelEl.setAttribute("animation-mixer", "timeScale", 0);
+        ringAudio.pause();
+        ringAudio.currentTime = 0;
       };
 
       target.addEventListener("targetFound", show);
-      target.addEventListener("targetLost", hide);
+      target.addEventListener("targetLost",  hide);
     }
   });
 </script>
@@ -102,34 +112,38 @@
     <div id="scanText">Point your camera at the marker</div>
 
     <a-scene
-      mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: true; uiLoading: true;"
+      mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: true; uiLoading: true; filterMinCF: 0.001; filterBeta: 0.001;"
       renderer="colorManagement: true; physicallyCorrectLights: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true"
     >
       <a-assets>
-        <a-asset-item id="phoneGLB" src="Phonemodel1.glb"></a-asset-item>
+        <a-asset-item id="phoneGLB" src="ringingphone.glb"></a-asset-item>
+        <audio id="ringAudio" src="longring.mp3" preload="auto"></audio>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  <!-- Lights belong here, as direct children of a-scene -->
+  <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+  <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
 
-      <a-entity mindar-image-target="targetIndex: 0" pop-phone>
-<a-entity
-  id="phoneRig"
-  position="0 0 0"
-  rotation="-90 0 180"
-  scale="1 1 1"
->
-  <a-gltf-model
-    id="phoneModel"
-    src="#phoneGLB"
-    position="0 0.08 0"
-    rotation="0 180 0"
-  ></a-gltf-model>
-</a-entity>
+  <!-- Target entity explicitly closed -->
+  <a-entity mindar-image-target="targetIndex: 0" pop-phone>
+    <a-entity
+      id="phoneRig"
+      position="0 0.05 0"
+      rotation="-15 0 0"
+      scale="1 1 1"
+    >
+      <a-gltf-model
+        id="phoneModel"
+        src="#phoneGLB"
+        position="0 0 0"
+        rotation="0 0 0"
+      ></a-gltf-model>
+    </a-entity>
+  </a-entity>  <!-- ← explicit close -->
 
-      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
-      <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
-    </a-scene>
+</a-scene>
   </body>
 </html>
