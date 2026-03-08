@@ -5,21 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>MindAR + Phone Pop</title>
 
-   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
     <style>
       body { margin: 0; overflow: hidden; background: #000; }
 
-      /* Simple scanning frame overlay (always visible until target found) */
       #scanFrame {
         position: fixed;
-        left: 50%;
-        top: 50%;
+        left: 50%; top: 50%;
         transform: translate(-50%, -50%);
-        width: 68vw;
-        max-width: 360px;
+        width: 68vw; max-width: 360px;
         aspect-ratio: 1 / 1;
         border: 3px solid rgba(255,255,255,0.85);
         border-radius: 18px;
@@ -30,86 +27,223 @@
 
       #scanText {
         position: fixed;
-        left: 50%;
-        top: calc(50% + 220px);
+        left: 50%; top: calc(50% + 220px);
         transform: translateX(-50%);
         padding: 10px 14px;
         border-radius: 12px;
         background: rgba(0,0,0,0.55);
         color: #fff;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        font-family: system-ui, sans-serif;
         font-size: 14px;
         z-index: 999999;
         pointer-events: none;
+        transition: opacity 0.4s;
+      }
+
+      #tapHint {
+        position: fixed;
+        left: 50%; bottom: 60px;
+        transform: translateX(-50%);
+        padding: 12px 20px;
+        border-radius: 30px;
+        background: rgba(255, 80, 80, 0.85);
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        z-index: 999999;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.5s;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+
+      #tapHint.visible { opacity: 1; }
+
+      @keyframes pulse {
+        0%, 100% { transform: translateX(-50%) scale(1); }
+        50%       { transform: translateX(-50%) scale(1.05); }
       }
     </style>
 
     <script>
-  AFRAME.registerComponent("pop-phone", {
-    init() {
-      const target = this.el;
-      const rig   = target.querySelector("#phoneRig");
-      const modelEl = target.querySelector("#phoneModel");
-      const ringAudio = document.querySelector("#ringAudio");
+      AFRAME.registerComponent("pop-phone", {
 
-      rig.setAttribute("visible", false);
+        init() {
+          const self       = this;
+          const target     = this.el;
+          const rig        = target.querySelector("#phoneRig");
+          const modelEl    = target.querySelector("#phoneModel");
+          const ringAudio  = document.querySelector("#ringAudio");
+          const helloAudio = document.querySelector("#helloAudio");
+          const tapHint    = document.querySelector("#tapHint");
+          const scanText   = document.querySelector("#scanText");
 
-      // ── Initialize the mixer ONCE when the GLB finishes loading ──────────
-      // Frozen at timeScale:0 so nothing plays until targetFound fires.
-      modelEl.addEventListener("model-loaded", () => {
-        const mesh = modelEl.getObject3D("mesh");
-        if (mesh?.animations?.length) {
-          console.log("GLB clips:", mesh.animations.map(c => c.name));
+          this.mixer      = null;
+          this.receivers  = null; // action for "reciever" clip
+          this.cord       = null; // action for "cord_up" clip
+          this.clipMode   = "none";
+
+          const FPS          = 30;
+          const RING_START   =   0 / FPS;
+          const RING_END     =  60 / FPS;
+          const PICKUP_START = 100 / FPS;
+          const PICKUP_END   = 200 / FPS;
+
+          let pickedUp = false;
+          rig.setAttribute("visible", false);
+
+          modelEl.addEventListener("model-loaded", (e) => {
+            const model = e.detail.model;
+
+            console.log("✅ Model loaded");
+            console.log("🎬 Total clips:", model?.animations?.length ?? 0);
+            console.log("📋 Clip names:", model.animations.map((c,i) => `[${i}] ${c.name} — ${c.duration.toFixed(2)}s`));
+
+            if (!model?.animations?.length) {
+              console.warn("⚠️ No animations in GLB!");
+              return;
+            }
+
+            self.mixerReceiver = new THREE.AnimationMixer(model);
+
+            // Find clips by name
+            model.animations.forEach(clip => {
+              if (clip.name === "reciever") {
+                self.receiver = self.mixerReceiver.clipAction(clip);
+                console.log("✅ reciever assigned");
+              }
+              if (clip.name === "cord_up") {
+                self.cord = self.mixerReceiver.clipAction(clip);
+                console.log("✅ cord_up assigned");
+              }
+              if (clip.name === "phone" || clip.name === "phonebase") {
+                self.phone = self.mixerReceiver.clipAction(clip);
+                console.log("✅ phone/phonebase assigned");
+              }
+            });
+
+            // Play all three from ring start, paused
+            [self.receiver, self.cord, self.phone].forEach(a => {
+              if (!a) return;
+              a.play();
+              a.paused = true;
+            });
+            self.mixerReceiver.setTime(RING_START);
+
+            console.log("🎛️ Mixer ready! receiver:", !!self.receiver, "cord:", !!self.cord, "phone:", !!self.phone);
+          });
+
+          // ── SHOW — marker found ──────────────────────
+          const show = () => {
+            if (!self.mixerReceiver) { console.warn("Mixer not ready"); return; }
+
+            pickedUp      = false;
+            self.clipMode = "ring";
+
+            self.mixerReceiver.setTime(RING_START);
+            [self.receiver, self.cord, self.phone].forEach(a => { if (a) a.paused = false; });
+
+            rig.setAttribute("visible", true);
+            rig.removeAttribute("animation__pop");
+            rig.setAttribute("scale", "0.001 0.001 0.001");
+            rig.setAttribute("animation__pop", {
+              property: "scale", to: "15 15 15",
+              dur: 450, easing: "easeOutBack"
+            });
+
+            ringAudio.loop        = true;
+            ringAudio.currentTime = 0;
+            ringAudio.play().catch(() => {});
+
+            scanText.style.opacity = "0";
+            tapHint.classList.add("visible");
+            tapHint.textContent    = "📞 Tap to answer";
+            console.log("📳 Ringing!");
+          };
+
+          // ── HIDE — marker lost ───────────────────────
+          const hide = () => {
+            rig.setAttribute("visible", false);
+            [self.receiver, self.cord, self.phone].forEach(a => { if (a) a.paused = true; });
+            self.clipMode         = "none";
+            ringAudio.pause();  ringAudio.currentTime  = 0;
+            helloAudio.pause(); helloAudio.currentTime = 0;
+            tapHint.classList.remove("visible");
+            scanText.style.opacity = "1";
+            pickedUp = false;
+          };
+
+          // ── PICKUP — user taps ───────────────────────
+          const pickup = () => {
+            if (pickedUp || !self.mixerReceiver) return;
+            pickedUp      = true;
+            self.clipMode = "pickup";
+
+            self.mixerReceiver.setTime(PICKUP_START);
+            [self.receiver, self.cord, self.phone].forEach(a => { if (a) a.paused = false; });
+
+            ringAudio.pause();
+            ringAudio.currentTime = 0;
+            tapHint.classList.remove("visible");
+            console.log("☎️ Picked up!");
+
+            setTimeout(() => {
+              helloAudio.currentTime = 0;
+              helloAudio.play().catch(() => {});
+            }, 800);
+          };
+
+          document.addEventListener("touchstart", (e) => {
+            if (rig.getAttribute("visible")) {
+              e.preventDefault();
+              pickup();
+            }
+          }, { passive: false });
+
+          document.addEventListener("click", () => {
+            if (rig.getAttribute("visible")) pickup();
+          });
+
+          target.addEventListener("targetFound", show);
+          target.addEventListener("targetLost",  hide);
+        },
+
+        tick(time, delta) {
+          if (!this.mixerReceiver) return;
+
+          this.mixerReceiver.update(delta / 1000);
+
+          const FPS        = 30;
+          const RING_START =   0 / FPS;
+          const RING_END   =  60 / FPS;
+          const PICKUP_END = 200 / FPS;
+
+          const a = this.receiver;
+          if (!a || a.paused) return;
+          const t = a.time;
+
+          if (this.clipMode === "ring") {
+            if (t >= RING_END || t < RING_START) {
+              this.mixerReceiver.setTime(RING_START);
+            }
+          }
+
+          if (this.clipMode === "pickup") {
+            if (t >= PICKUP_END) {
+              [this.receiver, this.cord, this.phone].forEach(ac => { if (ac) ac.paused = true; });
+              console.log("✅ Pickup complete");
+            }
+          }
         }
-        modelEl.setAttribute("animation-mixer", {
-          clip: "*",
-          loop: "repeat",
-          timeScale: 0      // paused – ready to go instantly on show()
-        });
       });
-
-      // ── Show: pop scale + start animation ────────────────────────────────
-      const show = () => {
-        rig.setAttribute("visible", true);
-
-        // Remove then re-add so the pop always restarts from scratch
-        rig.removeAttribute("animation__pop");
-        rig.setAttribute("scale", "0.001 0.001 0.001");
-        rig.setAttribute("animation__pop", {
-          property: "scale",
-          to: "3 3 3",
-          dur: 450,
-          easing: "easeOutBack"
-        });
-
-        // Un-freeze the animation (mixer already exists from model-loaded)
-        modelEl.setAttribute("animation-mixer", "timeScale", 1);
-
-        // Play ring audio, looping
-        ringAudio.loop = true;
-        ringAudio.currentTime = 0;
-        ringAudio.play().catch(() => {});  // .catch silences autoplay policy warnings
-      };
-
-      // ── Hide: freeze animation + stop audio ──────────────────────────────
-      const hide = () => {
-        rig.setAttribute("visible", false);
-        modelEl.setAttribute("animation-mixer", "timeScale", 0);
-        ringAudio.pause();
-        ringAudio.currentTime = 0;
-      };
-
-      target.addEventListener("targetFound", show);
-      target.addEventListener("targetLost",  hide);
-    }
-  });
-</script>
+    </script>
   </head>
 
   <body>
-    <!-- Our guaranteed scanning UI -->
     <div id="scanFrame"></div>
     <div id="scanText">Point your camera at the marker</div>
+    <div id="tapHint">📞 Tap to answer</div>
 
     <a-scene
       mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: true; uiLoading: true; filterMinCF: 0.001; filterBeta: 0.001;"
@@ -118,32 +252,31 @@
       device-orientation-permission-ui="enabled: true"
     >
       <a-assets>
-        <a-asset-item id="phoneGLB" src="ringingphone.glb"></a-asset-item>
-        <audio id="ringAudio" src="longring.mp3" preload="auto"></audio>
+        <a-asset-item id="phoneGLB"  src="phonefinal2.glb"></a-asset-item>
+        <audio id="ringAudio"  src="longring.mp3"  preload="auto"></audio>
+        <audio id="helloAudio" src="hello.mp3"     preload="auto"></audio>
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-  <!-- Lights belong here, as direct children of a-scene -->
-  <a-entity light="type: ambient; intensity: 0.9"></a-entity>
-  <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
+      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+      <a-entity light="type: directional; intensity: 0.8" position="1 2 1"></a-entity>
 
-  <!-- Target entity explicitly closed -->
-  <a-entity mindar-image-target="targetIndex: 0" pop-phone>
-    <a-entity
-      id="phoneRig"
-      position="0 0.05 0"
-      rotation="-15 0 0"
-      scale="1 1 1"
-    >
-      <a-gltf-model
-        id="phoneModel"
-        src="#phoneGLB"
-        position="0 0 0"
-        rotation="0 0 0"
-      ></a-gltf-model>
-    </a-entity>
-  </a-entity>  <!-- ← explicit close -->
+      <a-entity mindar-image-target="targetIndex: 0" pop-phone>
+        <a-entity
+          id="phoneRig"
+          position="0 0.05 0"
+          rotation="-15 0 0"
+          scale="15 15 15"
+        >
+          <a-gltf-model
+            id="phoneModel"
+            src="#phoneGLB"
+            position="0 0 0"
+            rotation="0 0 0"
+          ></a-gltf-model>
+        </a-entity>
+      </a-entity>
 
-</a-scene>
+    </a-scene>
   </body>
 </html>
