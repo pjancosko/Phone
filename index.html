@@ -213,17 +213,19 @@
           this.letterAnim  = null;   // holds anime instance so we can cancel it
 
           // ── MOBILE AUDIO UNLOCK ──────────────────────────
-          // iOS/Android block audio that isn't triggered by a direct user gesture.
-          // ringAudio fires on targetFound (camera event, not a tap), so it gets
-          // blocked. Fix: on the very first touch mute-play-then-pause ringAudio
-          // ONLY — don't touch writingAudio or helloAudio or they may get paused
-          // mid-playback if the tap happens while they're already running.
+          // iOS blocks any audio that isn't triggered by a direct user gesture.
+          // writingAudio AND ringAudio both fire on targetFound (camera event),
+          // so they get silently blocked. The MindAR scanning UI always fires a
+          // tap before the camera ever finds the marker, so priming all three
+          // here is safe — nothing will be playing yet at that moment.
           const unlockAudio = () => {
-            const prev = ringAudio.muted;
-            ringAudio.muted = true;
-            ringAudio.play()
-              .then(() => { ringAudio.pause(); ringAudio.currentTime = 0; ringAudio.muted = prev; })
-              .catch(() => { ringAudio.muted = prev; });
+            [ringAudio, writingAudio, helloAudio].forEach(a => {
+              const prev = a.muted;
+              a.muted = true;
+              a.play()
+                .then(() => { a.pause(); a.currentTime = 0; a.muted = prev; })
+                .catch(() => { a.muted = prev; });
+            });
           };
           document.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
           document.addEventListener("click",      unlockAudio, { once: true, capture: true });
