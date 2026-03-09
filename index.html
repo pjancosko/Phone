@@ -192,6 +192,61 @@
         0%, 100% { transform: translateX(-50%) scale(1); }
         50%       { transform: translateX(-50%) scale(1.05); }
       }
+
+      /* ── Splash / loading screen ────────────────────── */
+      #splash {
+        position: fixed; inset: 0;
+        z-index: 999999;
+        background: #1e1a40;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        transition: opacity 1.0s ease;
+      }
+      #splash.fade-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash-eyebrow {
+        font-family: Georgia, serif;
+        font-size: clamp(10px, 2.8vw, 13px);
+        color: rgba(255, 245, 225, 0.4);
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        margin-bottom: 1.6em;
+      }
+      #splash-title {
+        font-family: 'Tiro Devanagari Hindi', Georgia, serif;
+        font-style: italic;
+        font-size: clamp(36px, 11vw, 64px);
+        color: #FFF5E1;
+        letter-spacing: 0.04em;
+        line-height: 1.2;
+        text-align: center;
+        padding: 0 8vw;
+      }
+      #splash-rule {
+        width: 38px;
+        height: 1px;
+        background: rgba(255, 245, 225, 0.25);
+        margin: 2em auto;
+      }
+      #splash-tap {
+        font-family: Georgia, serif;
+        font-size: clamp(11px, 3vw, 14px);
+        color: rgba(255, 245, 225, 0.5);
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        animation: tapPulse 2.4s ease-in-out infinite;
+      }
+      @keyframes tapPulse {
+        0%, 100% { opacity: 0.3; }
+        50%       { opacity: 1;   }
+      }
     </style>
 
     <script>
@@ -212,32 +267,7 @@
           this.clipMode    = "none";
           this.letterAnim  = null;   // holds anime instance so we can cancel it
 
-          // ── MOBILE AUDIO UNLOCK ──────────────────────────
-          // iOS blocks any audio that isn't triggered by a direct user gesture.
-          // writingAudio AND ringAudio both fire on targetFound (camera event),
-          // so they get silently blocked. The MindAR scanning UI always fires a
-          // tap before the camera ever finds the marker, so priming all three
-          // here is safe — nothing will be playing yet at that moment.
-          const unlockAudio = () => {
-            [ringAudio, writingAudio, helloAudio].forEach(a => {
-              const prev = a.muted;
-              a.muted = true;
-              a.play()
-                .then(() => { a.pause(); a.currentTime = 0; a.muted = prev; })
-                .catch(() => { a.muted = prev; });
-            });
-            // iOS closes the audio session when all sounds stop.
-            // ringAudio plays ~20 s after writingAudio ends, so the session
-            // would be dead by then. A near-silent looping tone keeps it alive.
-            const keepAlive = document.createElement("audio");
-            keepAlive.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-            keepAlive.loop   = true;
-            keepAlive.volume = 0.001;
-            document.body.appendChild(keepAlive);
-            keepAlive.play().catch(() => {});
-          };
-          document.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
-          document.addEventListener("click",      unlockAudio, { once: true, capture: true });
+          // Audio is unlocked by the splash screen tap — see #splash handler below.
 
           const FPS          = 30;
           const RING_START   =   0 / FPS;
@@ -481,14 +511,7 @@
           // ── FADE OUT — hello audio ends ───────────────
           helloAudio.addEventListener("ended", () => {
             console.log("👋 Fading out phone...");
-            const meshes = [];
-            rig.object3D.traverse(child => {
-              if (child.isMesh) {
-                child.material = child.material.clone(); // avoid shared material mutation
-                child.material.transparent = true;
-                meshes.push(child);
-              }
-            });
+            const meshes = getMeshes(); // reuses already-cloned materials, safe to call every run
 
             const promptCard  = document.querySelector("#promptCard");
             const promptLine1 = document.querySelector("#promptLine1");
@@ -542,9 +565,17 @@
                     promptLine2.style.color = "";
                     promptLine3.style.color = "";
                     window.MemoryFX?.stop();
+                    // Gentle fade back to scanning state
+                    scanText.style.transition = "opacity 1.4s ease";
                     scanText.style.opacity = "1";
+                    setTimeout(() => { scanText.style.transition = ""; }, 1500);
                     self.clipMode = "none";
                     pickedUp = false;
+                    // Reset mixer back to ring start so next scan begins clean
+                    if (self.mixerReceiver) {
+                      [self.receiver, self.cord, self.phone].forEach(a => { if (a) { a.stop(); a.play(); a.paused = true; } });
+                      self.mixerReceiver.setTime(RING_START);
+                    }
                   }
                 });
             };
@@ -708,6 +739,15 @@
   </head>
 
   <body>
+
+    <!-- ── Splash / tap-to-begin screen ───────────────────── -->
+    <div id="splash">
+      <div id="splash-eyebrow">an AR experience</div>
+      <div id="splash-title">Long Distance</div>
+      <div id="splash-rule"></div>
+      <div id="splash-tap">touch to begin</div>
+    </div>
+
     <div id="vignette"></div>
     <canvas id="particles"></canvas>
     <div id="grain"></div>
@@ -1042,10 +1082,11 @@
 </div>
 
     <a-scene
-      mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiScanning: true; uiLoading: true; filterMinCF: 0.001; filterBeta: 0.001;"
+      mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: false; uiLoading: false; filterMinCF: 0.001; filterBeta: 0.001;"
       renderer="colorManagement: true; physicallyCorrectLights: true"
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: true"
+      loading-screen="enabled: false"
     >
       <a-assets>
         <a-asset-item id="phoneGLB"  src="phonefinal2.glb"></a-asset-item>
@@ -1075,5 +1116,48 @@
       </a-entity>
 
     </a-scene>
+
+    <script>
+      // ── Splash tap: guaranteed user gesture → unlock audio → start AR ──
+      (function () {
+        const splash   = document.getElementById("splash");
+        const sceneEl  = document.querySelector("a-scene");
+
+        splash.addEventListener("click", function onSplashTap () {
+
+          // 1. Unlock every audio element while we have a real user gesture
+          ["ringAudio","writingAudio","helloAudio"].forEach(id => {
+            const a = document.getElementById(id);
+            if (!a) return;
+            const prev = a.muted;
+            a.muted = true;
+            a.play()
+              .then(() => { a.pause(); a.currentTime = 0; a.muted = prev; })
+              .catch(() => { a.muted = prev; });
+          });
+
+          // 2. Keep iOS audio session alive between sounds with a near-silent loop
+          const ka = document.createElement("audio");
+          ka.src    = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+          ka.loop   = true;
+          ka.volume = 0.001;
+          document.body.appendChild(ka);
+          ka.play().catch(() => {});
+
+          // 3. Start MindAR tracking
+          const startTracking = () => {
+            try { sceneEl.systems["mindar-image-system"].start(); } catch(e) {}
+          };
+          if (sceneEl.hasLoaded) { startTracking(); }
+          else { sceneEl.addEventListener("loaded", startTracking, { once: true }); }
+
+          // 4. Fade out splash
+          splash.classList.add("fade-out");
+          setTimeout(() => { splash.remove(); }, 1200);
+
+        }, { once: true });
+      })();
+    </script>
+
   </body>
 </html>
