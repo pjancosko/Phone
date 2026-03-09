@@ -226,6 +226,15 @@
                 .then(() => { a.pause(); a.currentTime = 0; a.muted = prev; })
                 .catch(() => { a.muted = prev; });
             });
+            // iOS closes the audio session when all sounds stop.
+            // ringAudio plays ~20 s after writingAudio ends, so the session
+            // would be dead by then. A near-silent looping tone keeps it alive.
+            const keepAlive = document.createElement("audio");
+            keepAlive.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+            keepAlive.loop   = true;
+            keepAlive.volume = 0.001;
+            document.body.appendChild(keepAlive);
+            keepAlive.play().catch(() => {});
           };
           document.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
           document.addEventListener("click",      unlockAudio, { once: true, capture: true });
@@ -1052,8 +1061,8 @@
       <a-entity mindar-image-target="targetIndex: 0" pop-phone>
         <a-entity
           id="phoneRig"
-          position="0 -0.08 0"
-          rotation="-25 0 0"
+          position="0 -0.1 0"
+          rotation="-30 -20 0"
           scale="10 10 10"
         >
           <a-gltf-model
