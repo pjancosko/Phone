@@ -212,6 +212,21 @@
           this.clipMode    = "none";
           this.letterAnim  = null;   // holds anime instance so we can cancel it
 
+          // ── MOBILE AUDIO UNLOCK ──────────────────────────
+          // iOS/Android block audio until a user gesture fires.
+          // Prime all audio elements on the very first touch/click
+          // so ringAudio (which plays on targetFound, not a gesture) works.
+          const unlockAudio = () => {
+            [ringAudio, helloAudio, writingAudio].forEach(a => {
+              const p = a.play();
+              if (p) p.then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+            });
+            document.removeEventListener("touchstart", unlockAudio, true);
+            document.removeEventListener("click",      unlockAudio, true);
+          };
+          document.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
+          document.addEventListener("click",      unlockAudio, { once: true, capture: true });
+
           const FPS          = 30;
           const RING_START   =   0 / FPS;
           const RING_END     =  60 / FPS;
@@ -1033,8 +1048,8 @@
       <a-entity mindar-image-target="targetIndex: 0" pop-phone>
         <a-entity
           id="phoneRig"
-          position="0 0.05 0"
-          rotation="-38 -20 0"
+          position="0 -0.12 0"
+          rotation="-22 -20 0"
           scale="10 10 10"
         >
           <a-gltf-model
