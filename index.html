@@ -213,16 +213,17 @@
           this.letterAnim  = null;   // holds anime instance so we can cancel it
 
           // ── MOBILE AUDIO UNLOCK ──────────────────────────
-          // iOS/Android block audio until a user gesture fires.
-          // Prime all audio elements on the very first touch/click
-          // so ringAudio (which plays on targetFound, not a gesture) works.
+          // iOS/Android block audio that isn't triggered by a direct user gesture.
+          // ringAudio fires on targetFound (camera event, not a tap), so it gets
+          // blocked. Fix: on the very first touch mute-play-then-pause ringAudio
+          // ONLY — don't touch writingAudio or helloAudio or they may get paused
+          // mid-playback if the tap happens while they're already running.
           const unlockAudio = () => {
-            [ringAudio, helloAudio, writingAudio].forEach(a => {
-              const p = a.play();
-              if (p) p.then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
-            });
-            document.removeEventListener("touchstart", unlockAudio, true);
-            document.removeEventListener("click",      unlockAudio, true);
+            const prev = ringAudio.muted;
+            ringAudio.muted = true;
+            ringAudio.play()
+              .then(() => { ringAudio.pause(); ringAudio.currentTime = 0; ringAudio.muted = prev; })
+              .catch(() => { ringAudio.muted = prev; });
           };
           document.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
           document.addEventListener("click",      unlockAudio, { once: true, capture: true });
@@ -381,17 +382,18 @@
                 delay:      anime.stagger(1000)
               }, 0)
               .add({
-                // long reading pause — let it breathe
+                // hold — audio fades out here so the letter suspends in silence
                 targets: letterEl,
                 opacity: 1,
-                duration: 2800
+                duration: 3200,
+                begin: () => fadeWritingAudio(2200)
               })
               .add({
                 targets: letterEl,
                 opacity: [1, 0],
                 duration: 1400,
                 easing: "easeInQuad",
-                begin: () => fadeWritingAudio(1400),
+                begin: () => {},
                 complete: () => {
                   letterEl.style.transform = "translate(-50%, -50%) scale(1)";
                   resetLetter();
@@ -492,11 +494,11 @@
                   color: ["rgba(255,245,225,0)", "rgba(255,245,225,1)"],
                   duration: 2800
                 })
-                // silence — just Babuji. alone
+                // brief pause — just प्रणाम alone
                 .add({
                   targets: promptCard,
                   opacity: 1,
-                  duration: 2400
+                  duration: 1000
                 })
                 // Bai. — fades in beneath
                 .add({
@@ -1048,8 +1050,8 @@
       <a-entity mindar-image-target="targetIndex: 0" pop-phone>
         <a-entity
           id="phoneRig"
-          position="0 -0.12 0"
-          rotation="-22 -20 0"
+          position="0 -0.08 0"
+          rotation="-25 0 0"
           scale="10 10 10"
         >
           <a-gltf-model
