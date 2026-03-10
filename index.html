@@ -213,11 +213,10 @@
       }
       #splash-eyebrow {
         font-family: Georgia, serif;
-        font-size: clamp(10px, 2.8vw, 13px);
-        color: rgba(255, 245, 225, 0.4);
-        letter-spacing: 0.28em;
-        text-transform: uppercase;
-        margin-bottom: 1.6em;
+        font-size: clamp(11px, 3vw, 14px);
+        color: rgba(255, 245, 225, 0.45);
+        letter-spacing: 0.18em;
+        margin-top: 0.6em;
       }
       #splash-title {
         font-family: 'Tiro Devanagari Hindi', Georgia, serif;
@@ -247,6 +246,7 @@
         0%, 100% { opacity: 0.3; }
         50%       { opacity: 1;   }
       }
+
     </style>
 
     <script>
@@ -508,90 +508,39 @@
             }, 800);
           };
 
-          // ── FADE OUT — hello audio ends ───────────────
+          // ── FADE OUT — hello audio ends → silence + black ─
           helloAudio.addEventListener("ended", () => {
             console.log("👋 Fading out phone...");
-            const meshes = getMeshes(); // reuses already-cloned materials, safe to call every run
+            const meshes = getMeshes();
 
-            const promptCard  = document.querySelector("#promptCard");
-            const promptLine1 = document.querySelector("#promptLine1");
-            const promptLine2 = document.querySelector("#promptLine2");
-            const promptLine3 = document.querySelector("#promptLine3");
-
-            const showPrompt = () => {
-              promptCard.classList.add("active");
-
-              anime.timeline({ easing: "easeOutCubic" })
-                // Babuji. — slow fade in
-                .add({
-                  targets: promptLine1,
-                  color: ["rgba(255,245,225,0)", "rgba(255,245,225,1)"],
-                  duration: 2800
-                })
-                // brief pause — just प्रणाम alone
-                .add({
-                  targets: promptCard,
-                  opacity: 1,
-                  duration: 1000
-                })
-                // Bai. — fades in beneath
-                .add({
-                  targets: promptLine2,
-                  color: ["rgba(255,245,225,0)", "rgba(255,245,225,1)"],
-                  duration: 2800
-                })
-                // both names together — long hold
-                .add({
-                  targets: promptCard,
-                  opacity: 1,
-                  duration: 5000
-                })
-                // dissolve both together
-                .add({
-                  targets: [promptLine1, promptLine2],
-                  color: "rgba(255,245,225,0)",
-                  duration: 2400,
-                  easing: "easeInQuad"
-                })
-                .add({
-                  targets: promptCard,
-                  opacity: [1, 0],
-                  duration: 1600,
-                  easing: "easeInQuad",
-                  complete: () => {
-                    promptCard.classList.remove("active");
-                    promptCard.style.opacity = "";
-                    promptLine1.style.color = "";
-                    promptLine2.style.color = "";
-                    promptLine3.style.color = "";
-                    window.MemoryFX?.stop();
-                    // Gentle fade back to scanning state
-                    scanText.style.transition = "opacity 1.4s ease";
-                    scanText.style.opacity = "1";
-                    setTimeout(() => { scanText.style.transition = ""; }, 1500);
-                    self.clipMode = "none";
-                    pickedUp = false;
-                    // Reset mixer back to ring start so next scan begins clean
-                    if (self.mixerReceiver) {
-                      [self.receiver, self.cord, self.phone].forEach(a => { if (a) { a.stop(); a.play(); a.paused = true; } });
-                      self.mixerReceiver.setTime(RING_START);
-                    }
-                  }
-                });
+            const resetToScan = () => {
+              window.MemoryFX?.stop();
+              scanText.style.transition = "opacity 1.6s ease";
+              scanText.style.opacity = "1";
+              setTimeout(() => { scanText.style.transition = ""; }, 1800);
+              self.clipMode = "none";
+              pickedUp = false;
+              if (self.mixerReceiver) {
+                [self.receiver, self.cord, self.phone].forEach(a => { if (a) { a.stop(); a.play(); a.paused = true; } });
+                self.mixerReceiver.setTime(RING_START);
+              }
             };
 
-            const proxy = { opacity: 1 };
+            // Phone fades out → hold on black silence → reset
             anime({
-              targets: proxy,
+              targets: { opacity: 1 },
               opacity: 0,
               duration: 1800,
               easing: "easeInQuad",
-              update: () => meshes.forEach(m => { m.material.opacity = proxy.opacity; }),
+              update(anim) {
+                const v = 1 - anim.progress / 100;
+                meshes.forEach(m => { m.material.opacity = v; });
+              },
               complete: () => {
                 rig.setAttribute("visible", false);
                 meshes.forEach(m => { m.material.opacity = 1; m.material.transparent = false; });
-                // brief pause then show the prompt
-                setTimeout(showPrompt, 400);
+                // hold on black for 3 s, then fade back
+                setTimeout(resetToScan, 3000);
               }
             });
           });
@@ -742,8 +691,8 @@
 
     <!-- ── Splash / tap-to-begin screen ───────────────────── -->
     <div id="splash">
-      <div id="splash-eyebrow">an AR experience</div>
-      <div id="splash-title">Long Distance</div>
+      <div id="splash-title">Gyanlok</div>
+      <div id="splash-eyebrow">Plot 34, Sector 19</div>
       <div id="splash-rule"></div>
       <div id="splash-tap">touch to begin</div>
     </div>
@@ -1102,8 +1051,8 @@
       <a-entity mindar-image-target="targetIndex: 0" pop-phone>
         <a-entity
           id="phoneRig"
-          position="0 -0.1 0"
-          rotation="-30 -20 0"
+          position="0 -0.06 0"
+          rotation="23 -3 4"
           scale="10 10 10"
         >
           <a-gltf-model
@@ -1158,6 +1107,7 @@
         }, { once: true });
       })();
     </script>
+
 
   </body>
 </html>
